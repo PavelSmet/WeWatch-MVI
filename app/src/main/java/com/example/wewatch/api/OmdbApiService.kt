@@ -19,7 +19,8 @@ interface OmdbApi {
     @GET("/")
     suspend fun getMovieDetails(
         @Query("i") imdbId: String,
-        @Query("apikey") apiKey: String
+        @Query("apikey") apiKey: String,
+        @Query("plot") plot: String = "full"
     ): OmdbMovieResponse
 }
 
@@ -34,6 +35,16 @@ data class OmdbMovieResponse(
     val imdbID: String,
     val Title: String,
     val Year: String,
+    val Genre: String?,
+    val Plot: String?,
+    val Director: String?,
+    val Writer: String?,    // Сценарист
+    val Actors: String?,
+    val imdbRating: String?,
+    val Runtime: String?,   // Длительность
+    val Released: String?,  // Дата релиза
+    val Awards: String?,    // Награды
+    val Country: String?,   // Страна
     val Poster: String,
     val Response: String?,
     val Error: String?
@@ -61,7 +72,8 @@ class OmdbApiService {
                     imdbID = omdbMovie.imdbID,
                     title = omdbMovie.Title,
                     year = omdbMovie.Year,
-                    posterUrl = omdbMovie.Poster
+                    posterUrl = omdbMovie.Poster,
+                    genre = omdbMovie.Genre
                 )
             }
         } else {
@@ -76,6 +88,16 @@ class OmdbApiService {
                 imdbID = response.imdbID,
                 title = response.Title,
                 year = response.Year,
+                genre = response.Genre,
+                plot = response.Plot,
+                director = response.Director,
+                writer = response.Writer,
+                actors = response.Actors,
+                rating = response.imdbRating,
+                runtime = response.Runtime,
+                released = response.Released,
+                awards = response.Awards,
+                country = response.Country,
                 posterUrl = response.Poster
             )
         } else {
