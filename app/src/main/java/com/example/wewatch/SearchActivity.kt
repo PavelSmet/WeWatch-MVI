@@ -1,107 +1,100 @@
 package com.example.wewatch
 
+import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.Toast
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.example.wewatch.api.OmdbApiService
 import com.example.wewatch.databinding.ActivitySearchBinding
-import com.example.wewatch.models.Movie
-import com.example.wewatch.views.adapters.SearchMovieAdapter
-import kotlinx.coroutines.*
+import com.example.wewatch.viewmodels.SearchViewModel
+import com.example.wewatch.views.adapters.MovieAdapter
+import kotlinx.coroutines.launch
 
 class SearchActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySearchBinding
-    private lateinit var apiService: OmdbApiService
-    private lateinit var adapter: SearchMovieAdapter
-    private val coroutineScope = CoroutineScope(Dispatchers.Main + Job())
+    private val viewModel: SearchViewModel by viewModels()
+    private lateinit var adapter: MovieAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySearchBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        setupToolbar()
+        setupRecyclerView()
+        setupSearchButton()
+        observeViewModel()
+    }
+
+    private fun setupToolbar() {
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
-
-        apiService = OmdbApiService()
-        setupRecyclerView()
-        setupClickListeners()
-
-        // Если передали название из AddMovieActivity, сразу ищем
-        val initialQuery = intent.getStringExtra("query")
-        if (!initialQuery.isNullOrEmpty()) {
-            binding.etSearch.setText(initialQuery)
-            searchMovies(initialQuery)
-        }
+        binding.toolbar.setNavigationOnClickListener { finish() }
     }
 
     private fun setupRecyclerView() {
-        adapter = SearchMovieAdapter(
+        adapter = MovieAdapter(
             movies = emptyList(),
-            onMovieClick = {
-                // Обычный клик - по ТЗ ничего не делает или показывает Toast
-                Toast.makeText(this, "Удерживайте для выбора фильма", Toast.LENGTH_SHORT).show()
-            },
-            onMovieLongClick = { movie ->
-                // Выбор по долгому нажатию (ТЗ: правый клик/долгое нажатие)
-                val intent = intent
-                intent.putExtra("selected_movie", movie)
-                setResult(RESULT_OK, intent)
-                finish()
-            }
-        )
-
-        binding.rvSearchResults.apply {
-            layoutManager = LinearLayoutManager(this@SearchActivity)
-            adapter = this@SearchActivity.adapter
-        }
-    }
-
-    private fun setupClickListeners() {
-        binding.btnSearch.setOnClickListener {
-            val query = binding.etSearch.text.toString().trim()
-            if (query.isNotEmpty()) {
-                searchMovies(query)
-            } else {
-                Toast.makeText(this, "Введите название фильма", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun searchMovies(query: String) {
-        binding.progressBar.visibility = android.view.View.VISIBLE
-        binding.tvEmpty.visibility = android.view.View.GONE
-        binding.rvSearchResults.visibility = android.view.View.GONE
-
-        coroutineScope.launch {
-            try {
-                val results = apiService.searchMovies(query)
-                binding.progressBar.visibility = android.view.View.GONE
-
-                if (results.isEmpty()) {
-                    binding.tvEmpty.text = "Ничего не найдено"
-                    binding.tvEmpty.visibility = android.view.View.VISIBLE
-                } else {
-                    adapter.updateMovies(results)
-                    binding.rvSearchResults.visibility = android.view.View.VISIBLE
+            onItemClick = { movie ->
+                val resultIntent = Intent().apply {
+                    putExtra("selected_movie", movie)
                 }
-            } catch (e: Exception) {
-                binding.progressBar.visibility = android.view.View.GONE
-                binding.tvEmpty.text = "Ошибка: ${e.message}"
-                binding.tvEmpty.visibility = android.view.View.VISIBLE
+                setResult(RESULT_OK, resultIntent)
+                finish()
+            },
+            onSelectionChange = { _, _ -> }
+        )
+        binding.rvSearchResults.layoutManager = LinearLayoutManager(this)
+        binding.rvSearchResults.adapter = adapter
+    }
+
+    private fun setupSearchButton() {
+        binding.btnSearch.setOnClickListener {
+            val query = binding.etSearch.text.toString()
+            if (query.isNotEmpty()) {
+                viewModel.searchMovies(query)
+            } else {
+                Toast.makeText(this, "Введите текст", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
-    override fun onSupportNavigateUp(): Boolean {
-        onBackPressedDispatcher.onBackPressed()
-        return true
-    }
+    private fun observeViewModel() {
+        lifecycleScope.launch {
+            // Результаты поиска
+            launch {
+                viewModel.searchResults.collect { movies ->
+                    adapter.updateMovies(movies)
+                    binding.rvSearchResults.visibility = if (movies.isNotEmpty()) View.VISIBLE else View.GONE
+                    binding.tvEmpty.visibility = if (movies.isEmpty()) View.VISIBLE else View.GONE
+                    if (movies.isEmpty()) {
+                        binding.tvEmpty.text = "Ничего не найдено"
+                    }
+                }
+            }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        coroutineScope.cancel()
+            // Загрузка
+            launch {
+                viewModel.isLoading.collect { isLoading ->
+                    binding.progressBar.visibility = if (isLoading) View.VISIBLE else View.GONE
+                    if (isLoading) binding.tvEmpty.visibility = View.GONE
+                }
+            }
+
+            // Ошибки
+            launch {
+                viewModel.error.collect { error ->
+                    error?.let {
+                        Toast.makeText(this@SearchActivity, it, Toast.LENGTH_SHORT).show()
+                        binding.tvEmpty.text = it
+                        binding.tvEmpty.visibility = View.VISIBLE
+                    }
+                }
+            }
+        }
     }
 }
